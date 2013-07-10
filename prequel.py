@@ -43,7 +43,14 @@ TYPE_MAP = {
       "time"    : "DATETIME",
       "real"    : "REAL",
       ""        : "",
-      None      : ""
+      None      : "",
+      type("")  : "text",
+      type(1)   : "integer",
+      type(1L)  : "integer",
+      type(0.0) : "float",
+      type(u"") : "text",
+      type([])  : "category",
+      type({})  : "object"
 }
 
 @memorize
@@ -78,13 +85,15 @@ def load_json(datasource, key=None):
       { "d": [{...}, {...}, {...}]}
 
   """
+  typemap = TYPE_MAP
   try:
     data = requests.get(datasource).json
   except requests.exceptions.MissingSchema:
     try:
+      with codecs.open(datasource, encoding="utf-8") as f:
+        data = json.load(f)
+    except IOError:
       data = json.loads(datasource)
-    except ValueError:
-      data = json.load(datasource)
   if key:
     data = data[key]
   if type(data) == type({}):
@@ -97,13 +106,19 @@ def load_json(datasource, key=None):
   field_names = set(make_name_safer(name) for name in field_names) # filter
   field_names = list(field_names)
   field_names.sort()
+  type_hints = [None for n in field_names]
 
   for i, row in enumerate(data):
     tmp = [None for n in field_names]
-    for name, field in row.iter_items():
+    for name, field in row.iteritems():
       idx = field_names.index(make_name_safer(name))
       tmp[idx] = field
+      if not type_hints[idx]:
+        type_hints[idx] = typemap[type(field)]
     data[i] = tmp
+
+  for i, name in enumerate(field_names):
+    field_names[i] = (name, type_hints[i], "")
   return field_names, data
 
 
@@ -152,13 +167,13 @@ def load_csv(datasource, start_at_line=1, encoding=None, field_names=None, typeh
     f.close()
   except (NameError, AttributeError):
     pass
-  print field_names
-  print data
   return field_names, data
 
 
 def gen_create_table_sql(name, columns, table_constraints=None):
-  print name, columns
+  print "GENERATING TABLE SQL"
+  print "Name:", name
+  print "Columns:", columns
   if not table_constraints:
     table_constraints = []
   typemap = TYPE_MAP
@@ -210,6 +225,7 @@ def main(datasource,
 
   db = sqlite3.connect(database_path)
 
+
   try:
     columns, data = load_json(datasource)
   except AttributeError:
@@ -230,10 +246,10 @@ def main(datasource,
   column_constraints = _column_constraints
 
   _columns = []
-  for i, column_name in enumerate(columns):
-    n = column_name
-    t = typehints[i]
-    c = column_constraints[i]
+  for i, (name, inferred_typehint, inferred_constraint) in enumerate(columns):
+    n = name
+    t = typehints[i] or inferred_typehint
+    c = column_constraints[i] or inferred_constraint
     _columns.append((n, t, c))
   columns = _columns
 
