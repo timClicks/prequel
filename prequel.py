@@ -11,8 +11,12 @@ import os
 import sqlite3
 import string
 import tempfile
+import time
 import warnings
 
+
+import requests
+from propeller import propeller #https://github.com/mbarkhau/python-propeller
 try:
   import unicodecsv
   csv = unicodecsv.csv
@@ -29,7 +33,7 @@ SAFE_CHARS = frozenset(string.ascii_letters + "_")
 TYPE_MAP = {
       "blob"    : "BLOB",
       "category": "INTEGER",
-      "id"      : "INTEGER"
+      "id"      : "INTEGER",
       "integer" : "INTEGER",
       "float"   : "REAL",
       "numeric" : "NUMERIC",
@@ -37,7 +41,8 @@ TYPE_MAP = {
       "object"  : "INTEGER",
       "time"    : "DATETIME",
       "real"    : "REAL",
-      ""        : ""
+      ""        : "",
+      None      : ""
 }
 
 @memorize
@@ -74,7 +79,7 @@ def load_json(datasource, key=None):
   """
   try:
     data = requests.get(datasource).json
-  except requests.MissingSchema:
+  except requests.exceptions.MissingSchema:
     try:
       data = json.loads(datasource)
     except ValueError:
@@ -107,7 +112,7 @@ def load_csv(datasource, start_at_line=1, encoding=None, field_names=None, typeh
 
   if not field_names:
     field_names = []
-  clone = copy(field_names)
+  clone = copy.copy(field_names)
 
   clone = [make_name_safer(val) for val in clone]
   for i,new_val in enumerate(clone):
@@ -117,35 +122,42 @@ def load_csv(datasource, start_at_line=1, encoding=None, field_names=None, typeh
   try:
     response = requests.get(datasource)
     fn = response.iter_lines
-  except requests.MissingSchema:
+  except requests.exceptions.MissingSchema:
     try:
       if encoding:
-        with codecs.open(datasource, encoding=encoding) as f:
-          fn = f.readlines
+        f = codecs.open(datasource, encoding=encoding)
+        fn = f.readlines
       else:
-        with open(datasource) as f:
-          fn = f.readlines
+        f = open(datasource)
+        fn = f.readlines
     except IOError:
       pass
 
   try:
-    reader = csv.reader(fn)
+    reader = csv.reader(fn())
   except NameError:
     reader = csv.reader(datasource.splitlines())
 
   data = []
 
   for i, row in enumerate(reader):
-    if i <= start_at_line:
+    if i < start_at_line:
       continue
     if field_names:
       data.append(row)
     else:
       field_names = [make_name_safer(h) for h in row]
+  try:
+    f.close()
+  except (NameError, AttributeError):
+    pass
+  print field_names
+  print data
   return field_names, data
 
 
 def gen_create_table_sql(name, columns, table_constraints=None):
+  print name, columns
   if not table_constraints:
     table_constraints = []
   typemap = TYPE_MAP
@@ -154,13 +166,13 @@ def gen_create_table_sql(name, columns, table_constraints=None):
     if not column_constraints:
       column_constraints = ""
     if typehint == "category":
-      for sql in gen_create_table_sql(pluralize(column_name), [("id", "INTEGER", "PRIMARY KEY AUTOINCREMENT"), (column, "", "UNIQUE")])
+      for sql in gen_create_table_sql(pluralize(column_name), [("id", "INTEGER", "PRIMARY KEY AUTOINCREMENT"), (column, "", "UNIQUE")]):
         yield sql
       c = "FOREIGN KEY({}) REFERENCES {}(id) DEFERRABLE INITIALLY DEFERRED".format(column_name, pluralize(column_name))
       table_constraints.append(c)
     elif typehint == "object":
       raise NotImplementedError("Nested objects are not yet supported. Sorry.")
-    columns[i] = "{} {} {}".format(column_name, typemap[typehint], column_constraints)
+    columns[i] = "{} {} {}".format(column_name, typemap[typehint], column_constraints).strip()
 
   columns = ",\n".join(columns)
   table_constraints = ",\n".join(table_constraints)
@@ -176,28 +188,28 @@ def gen_create_table_sql(name, columns, table_constraints=None):
 def gen_insert_sql(table_name, columns):
 
   values = ', '.join("?" for column in columns)
-  columns = ",\n".join(columns)
   sql = """
-  INSERT INTO {} (
-    {}
-  )
+  INSERT INTO {}
   VALUES (
     {}
   );
-  """.format(table_name, columns, values)
+  """.format(table_name, values)
   return sql
 
 def main(datasource,
          column_names=None,
          typehints=None,
          column_constraints=None,
-         database_main_table_name="prequel"
+         database_main_table_name=None,
          database_dir=tempfile.gettempdir(),
          database_file_name="prequel-"+str(datetime.date.today()),
          database_file_extension="db"):
 
   fname = os.path.split(datasource)[1]
   fname = os.path.splitext(fname)[0]
+
+  if not database_main_table_name:
+    database_main_table_name = fname
 
   database_file = "{}{}{}".format(fname, os.path.extsep, database_file_extension)
   database_path = os.path.join(database_dir, database_file)
@@ -207,7 +219,7 @@ def main(datasource,
 
   try:
     columns, data = load_json(datasource)
-  except ValueError:
+  except AttributeError:
     columns, data = load_csv(datasource)
 
   _typehints = [None for i in range(len(columns))]
@@ -215,21 +227,52 @@ def main(datasource,
     for column_name, typehint in typehints.iteritems():
       idx = column_names.index(column_name)
       _typehints[idx] = typehint
-    typehints = _typehints
+  typehints = _typehints
 
   _column_constraints = [None for i in range(len(columns))]
   if column_constraints:
     for column_name, c in column_constraints.iteritems():
       idx = column_names.index(column_name)
       _column_constraints[idx] = c
-    column_constraints = _column_constraints
+  column_constraints = _column_constraints
 
-  columns = [(column_name, typehints[i], column_constraints[i]) for i, column_name in enumerate(columns)]
+  _columns = []
+  for i, column_name in enumerate(columns):
+    n = column_name
+    t = typehints[i]
+    c = column_constraints[i]
+    _columns.append((n, t, c))
+  columns = _columns
 
-  for sql in gen_create_table_sql(database_main_table_name, columns):
-    db.execute(sql)
+  with propeller("Creating tables") as p:
+    p.println(unicode(columns))
+    try:
+      for sql in gen_create_table_sql(database_main_table_name, columns):
+        for l in sql.splitlines():
+          p.println("> " + l)
+        db.execute(sql)
+        p.spin()
+    finally:
+      p.end()
 
-  sql = gen_insert_sql(database_main_table_name)
-  db.executemany(sql, data)
 
+  with propeller("Inserting data") as p:
+    for row in data:
+      sql = gen_insert_sql(database_main_table_name, row)
+      for l in sql.splitlines():
+          p.println("> " + l)
+      for l in unicode(row).strip().splitlines():
+          p.println("= " + l)
+      with db:
+        db.execute(sql, row)
+      p.spin()
+
+
+if __name__ == "__main__":
+  import argparse
+  parser = argparse.ArgumentParser()
+  parser.add_argument("dataset", help="Path to a dataset in CSV or JSON formats. Can be local or downloadable.")
+  args = parser.parse_args()
+
+  main(args.dataset)
 
