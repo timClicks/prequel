@@ -11,6 +11,7 @@ import os
 import sqlite3
 import string
 import tempfile
+import textwrap
 import time
 import warnings
 
@@ -174,26 +175,17 @@ def gen_create_table_sql(name, columns, table_constraints=None):
       raise NotImplementedError("Nested objects are not yet supported. Sorry.")
     columns[i] = "{} {} {}".format(column_name, typemap[typehint], column_constraints).strip()
 
-  columns = ",\n".join(columns)
+  columns = ",\n ".join(columns)
   table_constraints = ",\n".join(table_constraints)
 
-  sql = """CREATE TABLE {} (
-  {}
+  sql = ["CREATE TABLE {} (".format(name), columns, table_constraints]
 
-  {}
-  );
-  """.format(name, columns, table_constraints)
-  yield sql.strip()
+  yield "\n ".join(sql).strip() + "\n);"
 
 def gen_insert_sql(table_name, columns):
 
   values = ', '.join("?" for column in columns)
-  sql = """
-  INSERT INTO {}
-  VALUES (
-    {}
-  );
-  """.format(table_name, values)
+  sql = "INSERT INTO {} VALUES ({});".format(table_name, values)
   return sql
 
 def main(datasource,
@@ -203,7 +195,8 @@ def main(datasource,
          database_main_table_name=None,
          database_dir=tempfile.gettempdir(),
          database_file_name="prequel-"+str(datetime.date.today()),
-         database_file_extension="db"):
+         database_file_extension="db",
+         verbose=False):
 
   fname = os.path.split(datasource)[1]
   fname = os.path.splitext(fname)[0]
@@ -259,10 +252,15 @@ def main(datasource,
   with propeller("Inserting data") as p:
     for row in data:
       sql = gen_insert_sql(database_main_table_name, row)
-      for l in sql.splitlines():
+      if verbose:
+        lines = textwrap.wrap(unicode(row), 70)
+        p.println(database_main_table_name + " <- " + lines[0])
+        for l in lines[1:]:
+          p.println(" " * len(database_main_table_name + " <- ") + l)
+
+      if verbose > 1:
+        for l in sql.splitlines():
           p.println("> " + l)
-      for l in unicode(row).strip().splitlines():
-          p.println("= " + l)
       with db:
         db.execute(sql, row)
       p.spin()
@@ -271,8 +269,9 @@ def main(datasource,
 if __name__ == "__main__":
   import argparse
   parser = argparse.ArgumentParser()
-  parser.add_argument("dataset", help="Path to a dataset in CSV or JSON formats. Can be local or downloadable.")
+  parser.add_argument("dataset", help="Path to a dataset in CSV or JSON formats. Can be local or downloadable (HTTP or HTTPS).")
+  parser.add_argument("--verbose","-v", help="Be verbose", default=False, action='count')
   args = parser.parse_args()
 
-  main(args.dataset)
+  main(args.dataset, verbose=args.verbose)
 
