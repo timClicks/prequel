@@ -13,6 +13,10 @@ setup(name='prequel',
       long_description=long_desc,
       url='https://github.com/timClicks/prequel',
       packages=['prequel'],
+      requires=[
+                'python-propeller (>0.2)',
+                'unicodecsv'
+                ],
       classifiers=[
                    'Development Status :: 2 - Pre-Alpha',
                    'Environment :: Console',
