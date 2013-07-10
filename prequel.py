@@ -162,7 +162,7 @@ def load_csv(datasource, start_at_line=1, encoding=None, field_names=None, typeh
     if field_names:
       data.append(row)
     else:
-      field_names = [make_name_safer(h) for h in row]
+      field_names = [(make_name_safer(h), "", "") for h in row]
   try:
     f.close()
   except (NameError, AttributeError):
