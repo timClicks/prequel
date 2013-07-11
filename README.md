@@ -171,7 +171,7 @@ CREATE TABLE tax_spending (
 );
 ```
 
-Database (in pseudo-SQL):
+Database (in pseudo-markup):
 
 ```
 regions (
