@@ -171,9 +171,6 @@ def load_csv(datasource, start_at_line=1, encoding=None, field_names=None, typeh
 
 
 def gen_create_table_sql(name, columns, table_constraints=None):
-  print "GENERATING TABLE SQL"
-  print "Name:", name
-  print "Columns:", columns
   if not table_constraints:
     table_constraints = []
   typemap = TYPE_MAP
@@ -254,11 +251,11 @@ def main(datasource,
   columns = _columns
 
   with propeller("Creating tables") as p:
-    p.println(unicode(columns))
     try:
       for sql in gen_create_table_sql(database_main_table_name, columns):
-        for l in sql.splitlines():
-          p.println("> " + l)
+        if verbose:
+          for l in sql.splitlines():
+            p.println("> " + l)
         db.execute(sql)
         p.spin()
     finally:
