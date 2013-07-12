@@ -246,7 +246,10 @@ If you do not agree to the terms of the licence, do not use the software.
 
 ### Trade mark
 
-PREQUEL is an unregistered trade mark owned by Tim McNamara.
+PREQUEL is an unregistered trade mark owned by Tim McNamara. If you create a
+derivative product according to the copyright licence, do not use the word 
+"prequel" in its name.
+
 
 
 ### Consumer Guarantees
