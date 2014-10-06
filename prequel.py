@@ -206,8 +206,7 @@ def main(datasource,
          column_constraints=None,
          database_main_table_name=None,
          database_dir=tempfile.gettempdir(),
-         database_file_name="prequel-"+str(datetime.date.today()),
-         database_file_extension="db",
+         database_file_name="prequel-{}{}db".format(os.path.extsep, datetime.date.today()),
          verbose=False):
 
   fname = os.path.split(datasource)[1]
@@ -216,8 +215,7 @@ def main(datasource,
   if not database_main_table_name:
     database_main_table_name = fname
 
-  database_file = "{}{}{}".format(fname, os.path.extsep, database_file_extension)
-  database_path = os.path.join(database_dir, database_file)
+  database_path = os.path.join(database_dir, database_file_name)
 
 
   db = sqlite3.connect(database_path)
@@ -282,9 +280,24 @@ def main(datasource,
 if __name__ == "__main__":
   import argparse
   parser = argparse.ArgumentParser()
-  parser.add_argument("dataset", help="Path to a dataset in CSV or JSON formats. Can be local or downloadable (HTTP or HTTPS).")
+  parser.add_argument("dataset", help="Path to a CSV or JSON formats. Can be local path or a URL.")
   parser.add_argument("--verbose","-v", help="Be verbose", default=False, action='count')
+  parser.add_argument("--typehint","-t", help="Add a typehint (optional, more than one okay)", action='append', default=list())
+  parser.add_argument("--column-constraint", "-c", help="Add an explicit SQL constraint, e.g. UNIQUE to a column", action='append', default=list())
+  parser.add_argument("--column-name","-n", help="Provide a header for a column (optional, more than one okay)", action='append', default=list())
+  parser.add_argument("--table-name","-r", help="Provide a name for the main table of the database. (-r switch because tables are also known as relations)")   
+  parser.add_argument("--encoding","-e", help="Provide an encoding. May be useful for CSV files.", default="utf-8")
+  parser.add_argument("--database-directory", "-d", help="Location to store the database. Defaults to \"{}\".".format(tempfile.gettempdir()), default=tempfile.gettempdir())
+  parser.add_argument("--database-filename", help="Defaults to prequel-{}{}db".format(os.path.extsep, datetime.date.today()))
+  
   args = parser.parse_args()
 
-  main(args.dataset, verbose=args.verbose)
+  main(datasource=args.dataset,
+       column_names=args.column_name,
+       typehints=args.typehint,
+       column_constraints=args.column_constraint,
+       database_main_table_name=args.table_name,
+       database_dir=args.database_directory,
+       database_file_name=args.database_filename
+       verbose=args.verbose)
 
