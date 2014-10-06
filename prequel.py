@@ -3,6 +3,8 @@ prequel.py
 
 loads various datasources to a sqlite3 backend
 """
+from __future__ import print_function
+
 import codecs
 import copy
 import datetime
@@ -17,7 +19,7 @@ import warnings
 
 
 import requests
-from propeller import propeller #https://github.com/mbarkhau/python-propeller
+
 try:
   import unicodecsv
   csv = unicodecsv.csv
@@ -248,33 +250,28 @@ def main(datasource,
     _columns.append((n, t, c))
   columns = _columns
 
-  with propeller("Creating tables") as p:
-    try:
-      for sql in gen_create_table_sql(database_main_table_name, columns):
-        if verbose:
-          for l in sql.splitlines():
-            p.println("> " + l)
-        db.execute(sql)
-        p.spin()
-    finally:
-      p.end()
+  if verbose:
+    print("Creating Tables")
+  for sql in gen_create_table_sql(database_main_table_name, columns):
+    if verbose > 1:
+      print(sql)
+    db.execute(sql)
 
+  if verbose:
+    print("Inserting data")
+  for row in data:
+    sql = gen_insert_sql(database_main_table_name, row)
+    if verbose:
+      lines = textwrap.wrap(unicode(row), 70)
+      print(database_main_table_name + " <- " + lines[0])
+      for l in lines[1:]:
+        print(" " * len(database_main_table_name + " <- ") + l)
 
-  with propeller("Inserting data") as p:
-    for row in data:
-      sql = gen_insert_sql(database_main_table_name, row)
-      if verbose:
-        lines = textwrap.wrap(unicode(row), 70)
-        p.println(database_main_table_name + " <- " + lines[0])
-        for l in lines[1:]:
-          p.println(" " * len(database_main_table_name + " <- ") + l)
-
-      if verbose > 1:
-        for l in sql.splitlines():
-          p.println("> " + l)
-      with db:
-        db.execute(sql, row)
-      p.spin()
+        if verbose > 1:
+          print("> " + l)
+    with db:
+      db.execute(sql, row)
+  print("OK")
 
 
 if __name__ == "__main__":
